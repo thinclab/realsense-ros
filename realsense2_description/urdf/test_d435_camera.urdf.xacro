@@ -5,8 +5,9 @@
   <xacro:arg name="use_mesh" default="true" />
   <xacro:include filename="$(find realsense2_description)/urdf/_d435.urdf.xacro" />
   
-  <link name="base_link" />
-  <xacro:sensor_d435 parent="base_link" use_nominal_extrinsics="$(arg use_nominal_extrinsics)" add_plug="$(arg add_plug)" use_mesh="$(arg use_mesh)">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+  <!-- Changed the spawning location of the Realsense Camera URDF and changed the parent link to "root" -->
+  <link name="root" />
+  <xacro:sensor_d435 name="camera" parent="root" use_nominal_extrinsics="$(arg use_nominal_extrinsics)" add_plug="$(arg add_plug)" use_mesh="$(arg use_mesh)">
+    <origin xyz="-0.84 0.44 1.19" rpy="0.0 0.0 0.0"/>
   </xacro:sensor_d435>
 </robot>

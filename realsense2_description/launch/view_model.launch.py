@@ -44,12 +44,16 @@ def generate_launch_description():
         arguments=['-d', rviz_config_dir],
         parameters=[{'use_sim_time': False}]
         )
+    # Added a topic remapping for the robot_state_publisher to avoid conflicts with the KUKA URDF and removed the RViz2 Node
     model_node = Node(
         name='model_node',
         package='robot_state_publisher',
         executable='robot_state_publisher',
         namespace='',
         output='screen',
-        arguments=[urdf]
+        arguments=[urdf],
+        remappings=[
+            ('/robot_description', '/realsense_camera_description'),
+        ],      
         )
-    return launch.LaunchDescription([rviz_node, model_node])
+    return launch.LaunchDescription([model_node])
