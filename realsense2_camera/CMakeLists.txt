@@ -1,4 +1,4 @@
-# Copyright 2023 Intel Corporation. All Rights Reserved.
+# Copyright 2024 Intel Corporation. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,6 +30,8 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 option(BUILD_WITH_OPENMP "Use OpenMP" OFF)
 option(SET_USER_BREAK_AT_STARTUP "Set user wait point in startup (for debug)" OFF)
+# Define an option to enable or disable lifecycle nodes
+option(USE_LIFECYCLE_NODE "Enable lifecycle nodes (ON/OFF)" OFF)
 
 # Compiler Defense Flags
 if(UNIX OR APPLE)
@@ -107,8 +109,10 @@ find_package(builtin_interfaces REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(image_transport REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(rclcpp_components REQUIRED)
 find_package(realsense2_camera_msgs REQUIRED)
+find_package(std_srvs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
@@ -117,9 +121,9 @@ find_package(tf2 REQUIRED)
 find_package(diagnostic_updater REQUIRED)
 find_package(OpenCV REQUIRED COMPONENTS core)
 
-find_package(realsense2 2.55.1)
+find_package(realsense2 2.56)
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
-  find_package(realsense2-gl 2.55.1)
+  find_package(realsense2-gl 2.56)
 endif()
 if(NOT realsense2_FOUND)
     message(FATAL_ERROR "\n\n Intel RealSense SDK 2.0 is missing, please install it from https://github.com/IntelRealSense/librealsense/releases\n\n")
@@ -142,9 +146,12 @@ set(SOURCES
     src/dynamic_params.cpp
     src/sensor_params.cpp
     src/named_filter.cpp
+    src/pointcloud_filter.cpp
+    src/align_depth_filter.cpp
     src/profile_manager.cpp
     src/image_publisher.cpp
     src/tfs.cpp
+    src/actions.cpp
   )
 
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
@@ -174,6 +181,10 @@ elseif("$ENV{ROS_DISTRO}" STREQUAL "jazzy")
   message(STATUS "Build for ROS2 Jazzy")
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DJAZZY")
   set(SOURCES "${SOURCES}" src/ros_param_backend.cpp)
+elseif("$ENV{ROS_DISTRO}" STREQUAL "kilted")
+  message(STATUS "Build for ROS2 Kilted")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DKILTED")
+  set(SOURCES "${SOURCES}" src/ros_param_backend.cpp)
 else()
   message(FATAL_ERROR "Unsupported ROS Distribution: " "$ENV{ROS_DISTRO}")
 endif()
@@ -202,6 +213,8 @@ set(INCLUDES
     include/dynamic_params.h
     include/sensor_params.h
     include/named_filter.h
+    include/pointcloud_filter.h
+    include/align_depth_filter.h
     include/ros_param_backend.h
     include/profile_manager.h
     include/image_publisher.h)
@@ -243,6 +256,7 @@ set(dependencies
   rclcpp
   rclcpp_components
   realsense2_camera_msgs
+  std_srvs
   std_msgs
   sensor_msgs
   nav_msgs
@@ -251,14 +265,53 @@ set(dependencies
   diagnostic_updater
 )
 
+set (targets
+  cv_bridge::cv_bridge
+  image_transport::image_transport
+  rclcpp::rclcpp
+  rclcpp_components::component
+  ${realsense2_camera_msgs_TARGETS}
+  ${std_srvs_TARGETS}
+  ${std_msgs_TARGETS}
+  sensor_msgs::sensor_msgs_library
+  ${nav_msgs_TARGETS}
+  tf2::tf2
+  tf2_ros::tf2_ros
+  diagnostic_updater::diagnostic_updater
+)
+
 if (BUILD_ACCELERATE_GPU_WITH_GLSL)
   list(APPEND dependencies realsense2-gl)
+  list(APPEND targets realsense2-gl::realsense2-gl)
 else()
   list(APPEND dependencies realsense2)
+  list(APPEND targets realsense2::realsense2)
 endif()
 
-ament_target_dependencies(${PROJECT_NAME}
-  ${dependencies}
+# If the flag is enabled, define the macro
+if(USE_LIFECYCLE_NODE)
+    find_package(rclcpp_lifecycle REQUIRED)
+    find_package(lifecycle_msgs REQUIRED)
+    list(APPEND dependencies rclcpp_lifecycle lifecycle_msgs)
+    list(APPEND targets 
+        rclcpp_lifecycle::rclcpp_lifecycle
+        lifecycle_msgs::lifecycle_msgs__rosidl_typesupport_cpp)
+    add_definitions(-DUSE_LIFECYCLE_NODE)
+    message("🚀 USE_LIFECYCLE_NODE is ENABLED")
+
+    # Create a configuration file for the launch file
+    file(WRITE "${CMAKE_BINARY_DIR}/global_settings.yaml"
+        "use_lifecycle_node: true\n")
+else()
+    file(WRITE "${CMAKE_BINARY_DIR}/global_settings.yaml"
+        "use_lifecycle_node: false\n")
+endif()
+
+install(FILES "${CMAKE_BINARY_DIR}/global_settings.yaml"
+    DESTINATION share/${PROJECT_NAME}/config)
+
+target_link_libraries(${PROJECT_NAME}
+  ${targets}
 )
 
 rclcpp_components_register_node(${PROJECT_NAME}
@@ -315,8 +368,9 @@ if(BUILD_TESTING)
           $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
           $<INSTALL_INTERFACE:include>
        )
-       ament_target_dependencies(${_test_name}
-          std_msgs
+       target_link_libraries(${_test_name}
+          std_srvs::std_srvs__rosidl_typesupport_cpp
+          std_msgs::std_msgs__rosidl_typesupport_cpp
        )
        #target_link_libraries(${_test_name} name_of_local_library)
     endforeach()
