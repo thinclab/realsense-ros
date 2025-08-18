@@ -229,7 +229,6 @@ void BaseRealSenseNode::setupFilters()
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::temporal_filter>(), _parameters, _logger));
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::hole_filling_filter>(), _parameters, _logger));
     _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::disparity_transform>(false), _parameters, _logger));
-    _filters.push_back(std::make_shared<NamedFilter>(std::make_shared<rs2::rotation_filter>(std::vector< rs2_stream >{ RS2_STREAM_DEPTH, RS2_STREAM_COLOR, RS2_STREAM_INFRARED }), _parameters, _logger));
 
     /* 
     update_align_depth_func is being used in the align depth filter for triggiring the thread that monitors profile
@@ -517,39 +516,18 @@ void BaseRealSenseNode::imu_callback(rs2::frame frame)
         ImuMessage_AddDefaultValues(imu_msg);
         imu_msg.header.frame_id = OPTICAL_FRAME_ID(stream_index);
 
-        if (MOTION == stream_index)
+        auto motion_data = frame.as<rs2::motion_frame>().get_motion_data();
+        if (GYRO == stream_index)
         {
-            auto combined_motion_data = frame.as<rs2::motion_frame>().get_combined_motion_data();
-
-            imu_msg.linear_acceleration.x = combined_motion_data.linear_acceleration.x;
-            imu_msg.linear_acceleration.y = combined_motion_data.linear_acceleration.y;
-            imu_msg.linear_acceleration.z = combined_motion_data.linear_acceleration.z;
-
-            imu_msg.angular_velocity.x = combined_motion_data.angular_velocity.x;
-            imu_msg.angular_velocity.y = combined_motion_data.angular_velocity.y;
-            imu_msg.angular_velocity.z = combined_motion_data.angular_velocity.z;
-
-            imu_msg.orientation.x = combined_motion_data.orientation.x;
-            imu_msg.orientation.y = combined_motion_data.orientation.y;
-            imu_msg.orientation.z = combined_motion_data.orientation.z;
-            imu_msg.orientation.w = combined_motion_data.orientation.w;
-
+            imu_msg.angular_velocity.x = motion_data.x;
+            imu_msg.angular_velocity.y = motion_data.y;
+            imu_msg.angular_velocity.z = motion_data.z;
         }
-        else
+        else // ACCEL == stream_index
         {
-            auto motion_data = frame.as<rs2::motion_frame>().get_motion_data();
-            if (GYRO == stream_index)
-            {
-                imu_msg.angular_velocity.x = motion_data.x;
-                imu_msg.angular_velocity.y = motion_data.y;
-                imu_msg.angular_velocity.z = motion_data.z;
-            }
-            else // ACCEL == stream_index
-            {
-                imu_msg.linear_acceleration.x = motion_data.x;
-                imu_msg.linear_acceleration.y = motion_data.y;
-                imu_msg.linear_acceleration.z = motion_data.z;
-            }
+            imu_msg.linear_acceleration.x = motion_data.x;
+            imu_msg.linear_acceleration.y = motion_data.y;
+            imu_msg.linear_acceleration.z = motion_data.z;
         }
 
         imu_msg.header.stamp = t;
